@@ -8,6 +8,7 @@ var Handlebars = require('handlebars');
 var inflect = require('i')();
 var matter = require('gray-matter');
 var md = require('markdown-it')({ html: true, linkify: true });
+var mdPlugin = require('markdown-it-regexp');
 var mkdirp = require('mkdirp');
 var path = require('path');
 var sortObj = require('sort-object');
@@ -97,7 +98,13 @@ var defaults = {
 	 * Whether or not to log errors to console
 	 * @type {Boolean}
 	 */
-	logErrors: false
+	logErrors: false,
+
+	/**
+	 * HAML tab by default not active in examples
+	 * @type {string}
+	 */
+	showHaml: ''
 };
 
 
@@ -260,6 +267,9 @@ var wrapPage = function (page, layout) {
 	return layout.replace(/\{\%\s?body\s?\%\}/, page);
 };
 
+var hasHAML = function(content) {
+	return !!content.match(/!HAML---([\s\S]*?)---HAML!/);
+};
 
 /**
  * Parse each material - collect data, create partial
@@ -297,15 +307,15 @@ var parseMaterials = function () {
 
 		// stub the base object
 		assembly.materials[materialBase] = assembly.materials[materialBase] || {
-			name: toTitleCase(getName(materialBase)),
-			items: {}
-		};
+				name: toTitleCase(getName(materialBase)),
+				items: {}
+			};
 
 		if (isSubCollection) {
 			assembly.materials[parent].items[collection] = assembly.materials[parent].items[collection] || {
-				name: toTitleCase(getName(collection)),
-				items: {}
-			};
+					name: toTitleCase(getName(collection)),
+					items: {}
+				};
 		}
 
 	});
@@ -328,6 +338,8 @@ var parseMaterials = function () {
 		// trim whitespace from material content
 		var content = fileMatter.content.replace(/^(\s*(\r?\n|\r))+|(\s*(\r?\n|\r))+$/g, '');
 
+		localData.hasHaml = hasHAML(content) || '';
+		localData.showHaml = hasHAML(content) ? options.showHaml : '';
 
 		// capture meta data for the material
 		if (!isSubCollection) {
@@ -342,8 +354,8 @@ var parseMaterials = function () {
 				notes: (fileMatter.data.notes) ? md.render(fileMatter.data.notes) : '',
 				data: localData
 			};
+			
 		}
-
 
 		// store material-name-spaced local data in template context
 		assembly.materialData[id.replace(/\./g, '-')] = localData;
@@ -362,11 +374,17 @@ var parseMaterials = function () {
 			});
 		}
 
+		var contentHTML = content.match(/!HTML---([\s\S]*?)---HTML!/),
+			contentHAML = content.match(/!HAML---([\s\S]*?)---HAML!/);
+
 		// register the partial
-		Handlebars.registerPartial(id, content);
+		Handlebars.registerPartial(id, contentHTML ? contentHTML[1] : content);
 
+		if (contentHAML) {
+			// register the partial
+			Handlebars.registerPartial(id+'--HAML', contentHAML[1]);
+		}
 	});
-
 
 	// sort materials object alphabetically
 	assembly.materials = sortObj(assembly.materials, 'order');
@@ -376,7 +394,6 @@ var parseMaterials = function () {
 	}
 
 };
-
 
 /**
  * Parse markdown files as "docs"
@@ -492,9 +509,9 @@ var parseViews = function () {
 
 			// create collection if it doesn't exist
 			assembly.views[collection] = assembly.views[collection] || {
-				name: toTitleCase(collection),
-				items: {}
-			};
+					name: toTitleCase(collection),
+					items: {}
+				};
 
 			// store view data
 			assembly.views[collection].items[id] = {
@@ -574,7 +591,7 @@ var registerHelpers = function () {
 
 /**
  * Setup the assembly
- * @param  {Objet} options  User options
+ * @param  {Object} options  User options
  */
 var setup = function (userOptions) {
 
